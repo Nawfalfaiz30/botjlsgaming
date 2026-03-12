@@ -299,7 +299,7 @@ function buildAiringUTC(broadcast) {
   if (diff < 0) diff += 7;
 
   const [hour, minute] = broadcast.time.split(':').map(Number);
-  const utcHour = hour - 9; // JST → UTC
+  const utcHour = hour - 2; // JST → UTC
 
   return Date.UTC(
     now.getUTCFullYear(),
