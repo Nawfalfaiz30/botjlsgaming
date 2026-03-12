@@ -7,7 +7,7 @@ const { EmbedBuilder } = require('discord.js');
 function modEmbed(options = {}) {
   const {
     title,
-    color = 0xFF69B4,
+    color = 0x2941F2,
     description,
     thumbnail,
     footer = { text: 'JLS Gaming 🎮 ' },

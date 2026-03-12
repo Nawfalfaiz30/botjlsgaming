@@ -1,11 +1,3 @@
-module.exports = {
-  name: "rules",
-  description: "rules command",
-  async execute(interaction) {
-    await interaction.reply("rules works!");
-  }
-};
-
 // commands/rules.js
 
 const { SlashCommandBuilder } = require('discord.js');
@@ -14,36 +6,31 @@ const { modEmbed } = require('../helpers/embed');
 const { isStaff } = require('../helpers/staff');
 
 module.exports = {
-  // Nama command (dipakai untuk prefix jls!rules dan slash /rules)
   name: 'rules',
+  description: 'Menampilkan peraturan server (Staff Only)',
 
-  // Deskripsi untuk help command dan slash command registration
-  description: 'Menampilkan peraturan server (hanya untuk staff)',
-
-  // Builder untuk slash command
   slashBuilder: new SlashCommandBuilder()
     .setName('rules')
     .setDescription('Menampilkan peraturan server (Staff Only)'),
 
   /**
-   * Handler utama yang bisa dipanggil baik dari prefix maupun slash
+   * Handler untuk prefix (jls!rules) dan slash (/rules)
    * @param {import('discord.js').Message | import('discord.js').ChatInputCommandInteraction} ctx
-   * @param {import('discord.js').Client} client (opsional, jika butuh akses global)
    */
   async execute(ctx) {
-    // Deteksi apakah ini slash command atau prefix command
-    const isSlash = ctx.isChatInputCommand?.() ?? false;
 
-    // Ambil member (berbeda cara aksesnya tergantung tipe ctx)
-    const member = isSlash ? ctx.member : ctx.member;
+    const isSlash = typeof ctx.isChatInputCommand === "function";
+    const member = ctx.member;
+    const guild = ctx.guild;
 
-    // Cek apakah user adalah staff
+    // Cek apakah user staff
     if (!isStaff(member)) {
+
       const denyEmbed = modEmbed({
         title: '❌ AKSES DITOLAK',
         color: 0xFF0000,
         description: 'Perintah ini hanya bisa digunakan oleh **JLS Gaming Staff** atau **Admin**.',
-        keterangan: 'Jika kamu merasa ini kesalahan, hubungi staff melalui DM.'
+        keterangan: 'Jika kamu merasa ini kesalahan, hubungi staff.'
       });
 
       if (isSlash) {
@@ -53,24 +40,29 @@ module.exports = {
       }
     }
 
-    // Embed rules yang menarik
+    // Embed rules
     const rulesEmbed = modEmbed({
       title: '📜 Aturan Server JLS Gaming',
-      color: 0x2941F2,           
+      color: 0x2941F2,
       description: RULES_TEXT,
-      thumbnail: guild.iconURL({ dynamic: true, size: 512 }),
-      footer: { text: 'Dibaca dan dipatuhi ya, biar server tetap nyaman! 🎮 ' }
+      thumbnail: guild?.iconURL({ dynamic: true, size: 512 }),
+      footer: { text: 'Dibaca dan dipatuhi ya, biar server tetap nyaman! 🎮' },
+      timestamp: true
     });
 
-    // Kirim balasan
+    // Kirim pesan
     if (isSlash) {
-      await ctx.reply({ embeds: [rulesEmbed] });
+      await ctx.reply({
+        embeds: [rulesEmbed]
+      });
     } else {
-      await ctx.channel.send({ embeds: [rulesEmbed] });
+      await ctx.channel.send({
+        embeds: [rulesEmbed]
+      });
     }
+
   },
 
-  // Opsional: permission yang dibutuhkan (untuk dokumentasi atau auto-check di masa depan)
-  requiredPermissions: ['ManageGuild'], // hanya contoh, sesuaikan kebutuhan
-  staffOnly: true,
+  requiredPermissions: ['ManageGuild'],
+  staffOnly: true
 };

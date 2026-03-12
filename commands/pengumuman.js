@@ -1,11 +1,3 @@
-module.exports = {
-  name: "pengumuman",
-  description: "pengumuman command",
-  async execute(interaction) {
-    await interaction.reply("pengumuman works!");
-  }
-};
-
 // commands/pengumuman.js
 
 const { SlashCommandBuilder } = require('discord.js');
@@ -15,8 +7,7 @@ const { isStaff } = require('../helpers/staff');
 
 module.exports = {
   name: 'pengumuman',
-
-  description: 'Menampilkan pengumuman terbaru server (hanya untuk staff)',
+  description: 'Menampilkan pengumuman terbaru server (Staff Only)',
 
   slashBuilder: new SlashCommandBuilder()
     .setName('pengumuman')
@@ -27,11 +18,14 @@ module.exports = {
    * @param {import('discord.js').Message | import('discord.js').ChatInputCommandInteraction} ctx
    */
   async execute(ctx) {
-    const isSlash = ctx.isChatInputCommand?.() ?? false;
-    const member = isSlash ? ctx.member : ctx.member;
 
-    // Hanya staff yang boleh menggunakan command ini
+    const isSlash = typeof ctx.isChatInputCommand === "function";
+    const member = ctx.member;
+    const guild = ctx.guild;
+
+    // Cek apakah user staff
     if (!isStaff(member)) {
+
       const denyEmbed = modEmbed({
         title: '❌ AKSES DITOLAK',
         color: 0xFF0000,
@@ -41,39 +35,43 @@ module.exports = {
 
       if (isSlash) {
         return ctx.reply({ embeds: [denyEmbed], ephemeral: true });
+      } else {
+        return ctx.channel.send({ embeds: [denyEmbed] });
       }
-      return ctx.channel.send({ embeds: [denyEmbed] });
     }
 
-    // Embed pengumuman dengan tampilan menarik
+    // Embed pengumuman
     const announcementEmbed = modEmbed({
-      title: '🎮  PENGUMUMAN RESMI JLS Gaming 🎮 ',
-      color: 0x2941F2, // pink tema utama
+      title: '🎮 PENGUMUMAN RESMI JLS Gaming 🎮',
+      color: 0x2941F2,
       description: ANNOUNCEMENT_TEXT,
-      thumbnail: guild.iconURL({ dynamic: true, size: 512 }),
-      footer: { text: 'Tetap semangat di JLS Gaming!  • Dibuat oleh Staff' },
+      thumbnail: guild?.iconURL({ dynamic: true, size: 512 }),
+      footer: { text: 'Tetap semangat di JLS Gaming! • Dibuat oleh Staff' },
       timestamp: true
     });
 
-    // Tambahan field opsional jika ingin highlight sesuatu
-    announcementEmbed.addFields(
-      {
-        name: '📢 Info Penting',
-        value: 'Pastikan kalian baca sampai habis ya!\nJangan lupa invite temen wibu lainnya~',
-        inline: false
-      }
-    );
+    announcementEmbed.addFields({
+      name: '📢 Info Penting',
+      value: 'Pastikan kalian baca sampai habis ya!\nJangan lupa invite teman wibu lainnya~',
+      inline: false
+    });
 
     // Kirim pesan
     if (isSlash) {
-      await ctx.reply({ embeds: [announcementEmbed], content: '@everyone' }); // ping everyone di slash
+      await ctx.reply({
+        content: '@everyone',
+        embeds: [announcementEmbed]
+      });
     } else {
-      await ctx.channel.send({ embeds: [announcementEmbed], content: '@everyone' });
+      await ctx.channel.send({
+        content: '@everyone',
+        embeds: [announcementEmbed]
+      });
     }
+
   },
 
-  // Metadata tambahan
   staffOnly: true,
   category: 'staff',
-  cooldown: 300, // contoh: 5 menit cooldown (opsional, bisa ditambahkan logic di index.js nanti)
+  cooldown: 300
 };
