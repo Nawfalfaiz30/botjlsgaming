@@ -48,9 +48,9 @@ module.exports = {
     // Embed pengumuman dengan tampilan menarik
     const announcementEmbed = modEmbed({
       title: '🎮  PENGUMUMAN RESMI JLS Gaming 🎮 ',
-      color: 0xFF69B4, // pink tema utama
+      color: 0x2941F2, // pink tema utama
       description: ANNOUNCEMENT_TEXT,
-      thumbnail: 'https://i.imgur.com/8jKzL9f.gif', // contoh GIF anime announcement / banner (ganti sesuai keinginan)
+      thumbnail: guild.iconURL({ dynamic: true, size: 512 }),
       footer: { text: 'Tetap semangat di JLS Gaming!  • Dibuat oleh Staff' },
       timestamp: true
     });

@@ -7,7 +7,7 @@ const { getAiringAnime } = require('../helpers/malService');
 ====================================================== */
 
 const ANIME_CHANNEL_ID =
-  process.env.ANIME_CHANNEL_ID || '1461185042658230313';
+  process.env.ANIME_CHANNEL_ID || '1425803587526594621'; 
 const ROLE_ID = '1425791942003789928';
 
 const TEST_MODE = false;

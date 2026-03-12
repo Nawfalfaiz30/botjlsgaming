@@ -56,9 +56,9 @@ module.exports = {
     // Embed rules yang menarik
     const rulesEmbed = modEmbed({
       title: '📜 Aturan Server JLS Gaming',
-      color: 0xFF69B4,           // warna pink tema sakura
+      color: 0x2941F2,           
       description: RULES_TEXT,
-      thumbnail: 'https://i.imgur.com/0ZxYk.gif', // contoh GIF sakura (ganti sesuai selera)
+      thumbnail: guild.iconURL({ dynamic: true, size: 512 }),
       footer: { text: 'Dibaca dan dipatuhi ya, biar server tetap nyaman! 🎮 ' }
     });
 
