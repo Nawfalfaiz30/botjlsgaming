@@ -7,7 +7,7 @@ const { getAiringAnime } = require('../helpers/malService');
 ====================================================== */
 
 const ANIME_CHANNEL_ID =
-  process.env.ANIME_CHANNEL_ID || '1425803587526594621'; 
+  process.env.ANIME_CHANNEL_ID || '1425803587526594621';
 const ROLE_ID = '1425791942003789928';
 
 const TEST_MODE = false;
@@ -154,7 +154,7 @@ async function sendScheduleEmbed(channel, upcoming) {
     // DESC
     .setDescription(
       '🎎 **Anime yang akan tayang dalam 24 jam ke depan**\n' +
-      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'
     )
 
     // LOGO KANAN
@@ -256,7 +256,7 @@ function scheduleReminder(client, anime, airingUTC) {
               anime.genres?.map(g => g.name).join(', ') || 'Unknown',
           }
         )
-        .setFooter({ text: '📡 JLS • Anime Airing Reminder' })
+        .setFooter({ text: '📡 JLS Gaming • Anime Airing Reminder' })
         .setTimestamp();
 
       await channel.send({
@@ -299,7 +299,7 @@ function buildAiringUTC(broadcast) {
   if (diff < 0) diff += 7;
 
   const [hour, minute] = broadcast.time.split(':').map(Number);
-  const utcHour = hour - 2; // JST → UTC
+  const utcHour = hour - 9; // JST → UTC
 
   return Date.UTC(
     now.getUTCFullYear(),
