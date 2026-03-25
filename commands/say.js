@@ -71,7 +71,7 @@ module.exports = {
       const response = await axios.post(
         OPENAI_API_URL,
         {
-          model: 'gpt-5.4-mini',
+          model: 'gpt-5.4',
           messages: [
             {
               role: 'system',

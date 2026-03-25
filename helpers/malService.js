@@ -12,10 +12,16 @@ async function getAiringAnime() {
   const json = await res.json();
 
   return json.data.map(anime => ({
+    mal_id: anime.mal_id,
     title: anime.title,
+    url: anime.url,
+    images: anime.images,
     broadcast: anime.broadcast,
-    genres: anime.genres || [],
-    studios: anime.studios || [],
+    aired: anime.aired?.string || "Unknown",
+    aired_from: anime.aired?.from,
+    aired_to: anime.aired?.to,
+    genres: anime.genres?.map(g => g.name) || [],
+    studios: anime.studios?.map(s => s.name) || [],
     score: anime.score,
     source: anime.source,
   }));
