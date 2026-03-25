@@ -45,7 +45,7 @@ module.exports = client => {
 
   // DAILY LIST
   cron.schedule(
-    '43 2 * * *',
+    '00 8 * * *',
     () => {
       cleanupExpiredReminders();
       runScan(client, { sendList: true, label: 'Daily 08:00' });
