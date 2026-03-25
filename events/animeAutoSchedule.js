@@ -45,7 +45,7 @@ module.exports = client => {
 
   // DAILY LIST
   cron.schedule(
-    '0 8 * * *',
+    '43 2 * * *',
     () => {
       cleanupExpiredReminders();
       runScan(client, { sendList: true, label: 'Daily 08:00' });
@@ -132,7 +132,7 @@ async function sendScheduleEmbed(channel, upcoming) {
     .setThumbnail(client.user.displayAvatarURL({ size: 256 }))
 
     .setFooter({
-      text: 'Powered by MyAnimeList • Jikan API',
+      text: 'JLS Gaming Anime Schedule',
     })
 
     .setTimestamp();
@@ -141,13 +141,13 @@ async function sendScheduleEmbed(channel, upcoming) {
     const unix = Math.floor(airingUTC / 1000);
 
     embed.addFields({
-      name: `🎬 ${anime.title}`,
+      name: `\n🎬 ${anime.title}`,
       value:
-        `🕒 <t:${unix}:F> • <t:${unix}:R>\n` +
+        `🕒 **${fmtWIB(airingUTC)} WIB** ⏳ <t:${unix}:R>\n` +
         `⭐ **${anime.score ?? 'N/A'}** | 📚 ${formatSource(anime.source)}\n` +
         `🏢 ${anime.studios?.[0] || 'Unknown'}\n` +
         `🎭 ${anime.genres?.slice(0, 3).join(', ') || '—'}\n` +
-        `📅 ${anime.aired}`,
+        `📅 ${anime.aired}\n`,
       inline: false,
     });
   }

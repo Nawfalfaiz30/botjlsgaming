@@ -1,4 +1,3 @@
-// helpers/embed.js
 const { EmbedBuilder } = require('discord.js');
 
 /* =============================
@@ -7,32 +6,42 @@ const { EmbedBuilder } = require('discord.js');
 function modEmbed(options = {}) {
   const {
     title,
-    color = 0x2941F2,
     description,
+    color = 0x2941F2,
+
     thumbnail,
-    footer = { text: 'JLS Gaming 🎮 ' },
+    image, // ✅ TAMBAHAN (POSTER BESAR)
+
+    footer = { text: 'JLS Gaming 🎮' },
     timestamp = true,
     fields = [],
   } = options;
 
-  const embed = new EmbedBuilder()
-    .setColor(color)
-    .setFooter(footer);
+  const embed = new EmbedBuilder().setColor(color);
 
-  if (timestamp) embed.setTimestamp();
   if (title) embed.setTitle(title);
   if (description) embed.setDescription(description);
+
+  // ✅ SUPPORT GAMBAR
   if (thumbnail) embed.setThumbnail(thumbnail);
+  if (image) embed.setImage(image);
+
   if (fields.length > 0) embed.addFields(fields);
+
+  if (footer) embed.setFooter(footer);
+  if (timestamp) embed.setTimestamp();
 
   return embed;
 }
 
-// EMBED KHUSUS ANIME SCHEDULE
+/* =============================
+   EMBED KHUSUS ANIME SCHEDULE
+============================= */
 function animeScheduleEmbed({
   title,
   description,
   thumbnail,
+  image, // ✅ TAMBAHAN
   fields = [],
   isWeekly = false,
 }) {
@@ -40,22 +49,27 @@ function animeScheduleEmbed({
     title,
     description,
     thumbnail,
+    image, // ✅ PASS KE modEmbed
     fields,
     footer: {
       text: isWeekly
-        ? 'Anime minggu ini • Data dari AniList • WIB'
-        : 'Anime hari ini • Data dari AniList • WIB',
+        ? 'Anime minggu ini • Data dari Jikan • WIB'
+        : 'Anime hari ini • Data dari Jikan • WIB',
     },
     timestamp: true,
   });
 }
 
-// UTILITIES
+/* =============================
+   UTILITIES
+============================= */
 
 // Batasi teks agar tidak melebihi limit Discord
 function limitText(text = '', max = 1024) {
-  if (text.length <= max) return text;
-  return text.slice(0, max - 3) + '...';
+  if (!text) return '';
+  return text.length <= max
+    ? text
+    : text.slice(0, max - 3) + '...';
 }
 
 // Format genre anime (maks 3)
@@ -65,7 +79,7 @@ function formatGenres(genres = []) {
     : 'Tidak diketahui';
 }
 
-// Format durasi (dipakai command lain)
+// Format durasi
 function formatDuration(ms) {
   if (!ms || ms < 1000) return 'kurang dari 1 detik';
 
@@ -87,7 +101,9 @@ function formatDuration(ms) {
   return parts.join(' ');
 }
 
-// CARD ANIME SCHEDULE
+/* =============================
+   CARD ANIME (ANILIST STYLE)
+============================= */
 function scheduleCard(anime, { showDay = false } = {}) {
   const date = new Date(anime.airingAt * 1000);
 
@@ -111,15 +127,20 @@ function scheduleCard(anime, { showDay = false } = {}) {
       `⏰ **${time} WIB**\n` +
       `📺 Episode **${anime.episode}**\n\n` +
       `🏷️ **Genre**: ${formatGenres(media.genres)}\n` +
-      `🏢 **Studio**: ${media.studios?.nodes?.[0]?.name || 'Tidak diketahui'}\n` +
+      `🏢 **Studio**: ${
+        media.studios?.nodes?.[0]?.name || 'Tidak diketahui'
+      }\n` +
       `📡 **Platform**: ${
-        require('./animePlatform').detectPlatform(media) || 'Belum tersedia'
+        require('./animePlatform').detectPlatform(media) ||
+        'Belum tersedia'
       }`,
     inline: false,
   };
 }
 
-// EXPORT (SATU KALI SAJA)
+/* =============================
+   EXPORT
+============================= */
 module.exports = {
   modEmbed,
   animeScheduleEmbed,
