@@ -2,50 +2,39 @@ const cron = require('node-cron');
 const { EmbedBuilder } = require('discord.js');
 const { getAiringAnime } = require('../helpers/malService');
 
-// CONFIG
+// ================= CONFIG =================
 
 const ANIME_CHANNEL_ID =
   process.env.ANIME_CHANNEL_ID || '1425803587526594621';
 const ROLE_ID = '1425791942003789928';
 
-const TEST_MODE = false;
 const WIB = 'Asia/Jakarta';
+const JST_OFFSET = 9; // Jepang UTC+9
 
-// DAY MAP
-
-const DAY_INDEX = {
-  Sundays: 0,
-  Mondays: 1,
-  Tuesdays: 2,
-  Wednesdays: 3,
-  Thursdays: 4,
-  Fridays: 5,
-  Saturdays: 6,
-};
-
-// STATE
+// ================= STATE =================
 
 const scheduledReminders = new Set();
+let cachedChannel = null;
 
-// EXPORT
+// ================= EXPORT =================
 
 module.exports = client => {
 
-  // STARTUP SCAN
+  // STARTUP
   setTimeout(() => {
     runScan(client, { sendList: false, label: 'Startup' });
-  }, TEST_MODE ? 3000 : 5000);
+  }, 5000);
 
-  // HOURLY SCAN
+  // SCAN TIAP JAM MENIT 07
   cron.schedule(
     '7 * * * *',
     () => runScan(client, { sendList: false, label: 'Hourly' }),
     { timezone: WIB }
   );
 
-  // DAILY LIST
+  // LIST HARIAN JAM 08:00 WIB
   cron.schedule(
-    '00 8 * * *',
+    '0 8 * * *',
     () => {
       cleanupExpiredReminders();
       runScan(client, { sendList: true, label: 'Daily 08:00' });
@@ -62,10 +51,17 @@ async function runScan(
 ) {
   console.log(`[ANIME] ${label} scan started`);
 
-  const channel = await client.channels.fetch(ANIME_CHANNEL_ID);
+  const channel = await getChannel(client);
   if (!channel) return;
 
-  const animeList = await getAiringAnime();
+  let animeList = [];
+  try {
+    animeList = await getAiringAnime();
+  } catch (err) {
+    console.error('[ANIME] API error:', err);
+    return;
+  }
+
   if (!animeList?.length) return;
 
   const now = Date.now();
@@ -74,13 +70,15 @@ async function runScan(
   const upcoming = [];
 
   for (const anime of animeList) {
+    // 🔹 aired hanya sebagai filter
     if (!isStillAiring(anime)) continue;
 
     if (!anime.broadcast?.day || !anime.broadcast?.time) continue;
 
-    const airingUTC = buildAiringUTC(anime.broadcast);
+    const airingUTC = getNextAiringUTC(anime.broadcast);
     if (!airingUTC) continue;
 
+    // 🔥 FILTER UTAMA (FIXED)
     if (airingUTC < now || airingUTC > next24h) continue;
 
     const key = `${anime.mal_id}-${airingUTC}`;
@@ -98,16 +96,56 @@ async function runScan(
   }
 }
 
+// ================= TIME FIX =================
+
+// 🔥 FIX TOTAL: perhitungan airing
+function getNextAiringUTC(broadcast) {
+  const now = new Date();
+
+  const days = {
+    Sundays: 0,
+    Mondays: 1,
+    Tuesdays: 2,
+    Wednesdays: 3,
+    Thursdays: 4,
+    Fridays: 5,
+    Saturdays: 6,
+  };
+
+  const targetDay = days[broadcast.day];
+  if (targetDay === undefined) return null;
+
+  const result = new Date(now);
+
+  // cari hari berikutnya
+  while (result.getUTCDay() !== targetDay) {
+    result.setUTCDate(result.getUTCDate() + 1);
+  }
+
+  const [hour, minute] = broadcast.time.split(':').map(Number);
+
+  // convert JST → UTC (AMAN)
+  result.setUTCHours(hour - JST_OFFSET, minute, 0, 0);
+
+  // kalau sudah lewat minggu ini → lompat ke minggu depan
+  if (result.getTime() < now.getTime()) {
+    result.setUTCDate(result.getUTCDate() + 7);
+  }
+
+  return result.getTime();
+}
+
 // ================= FILTER =================
 
 function isStillAiring(anime) {
-  if (!anime.aired_to) return true;
+  const end = anime.aired?.to
+    ? new Date(anime.aired.to).getTime()
+    : null;
 
-  const end = new Date(anime.aired_to).getTime();
-  return end > Date.now();
+  return !end || end > Date.now();
 }
 
-// ================= EMBED LIST =================
+// ================= EMBED =================
 
 async function sendScheduleEmbed(channel, upcoming) {
   const client = channel.client;
@@ -115,122 +153,62 @@ async function sendScheduleEmbed(channel, upcoming) {
 
   upcoming.sort((a, b) => a.airingUTC - b.airingUTC);
 
-  const embed = new EmbedBuilder()
-    .setColor(0x5865F2)
-
-    .setAuthor({
-      name: '✨ JLS Anime Scheduler',
-      iconURL: client.user.displayAvatarURL(),
-    })
-
-    .setTitle('📺 Airing Anime — Next 24 Hours')
-
-    .setDescription(
-      '```fix\nStay updated with the latest anime episodes airing soon!\n```'
-    )
-
-    .setThumbnail(client.user.displayAvatarURL({ size: 256 }))
-
-    .setFooter({
-      text: 'JLS Gaming Anime Schedule',
-    })
-
-    .setTimestamp();
-
-  for (const { anime, airingUTC } of upcoming) {
-    const unix = Math.floor(airingUTC / 1000);
-
-    embed.addFields({
-      name: `\n🎬 ${anime.title}`,
-      value:
-        `🕒 **${fmtWIB(airingUTC)} WIB** ⏳ <t:${unix}:R>\n` +
-        `⭐ **${anime.score ?? 'N/A'}** | 📚 ${formatSource(anime.source)}\n` +
-        `🏢 ${anime.studios?.[0] || 'Unknown'}\n` +
-        `🎭 ${anime.genres?.slice(0, 3).join(', ') || '—'}\n` +
-        `📅 ${anime.aired}\n`,
-      inline: false,
-    });
+  // 🔥 SPLIT (ANTI LIMIT)
+  const chunks = [];
+  for (let i = 0; i < upcoming.length; i += 25) {
+    chunks.push(upcoming.slice(i, i + 25));
   }
 
-  await channel.send({
-    content: `<@&${ROLE_ID}>`,
-    embeds: [embed],
-  });
+  for (const chunk of chunks) {
+    const embed = new EmbedBuilder()
+      .setColor(0x5865F2)
+      .setAuthor({
+        name: '✨ JLS Anime Scheduler',
+        iconURL: client.user.displayAvatarURL(),
+      })
+      .setTitle('📺 Airing Anime — Next 24 Hours')
+      .setDescription(
+        '```fix\nAnime yang akan tayang dalam 24 jam ke depan\n```'
+      )
+      .setFooter({ text: 'JLS Anime Schedule' })
+      .setTimestamp();
+
+    for (const { anime, airingUTC } of chunk) {
+      const unix = Math.floor(airingUTC / 1000);
+
+      embed.addFields({
+        name: `🎬 ${anime.title}`,
+        value:
+          `🕒 <t:${unix}:F>\n` +
+          `⏳ <t:${unix}:R>\n` +
+          `⭐ ${anime.score ?? 'N/A'} | 📚 ${formatSource(anime.source)}`,
+      });
+    }
+
+    await channel.send({
+      content: `<@&${ROLE_ID}>`,
+      embeds: [embed],
+    });
+  }
 }
 
 // ================= REMINDER =================
 
 function scheduleReminder(client, anime, airingUTC) {
-  const delay = TEST_MODE ? 5000 : airingUTC - Date.now();
-  if (!TEST_MODE && delay <= 0) return;
-
-  console.log(
-    `[ANIME] Reminder scheduled: ${anime.title} (${fmtWIB(airingUTC)} WIB)`
-  );
+  const delay = airingUTC - Date.now();
+  if (delay <= 0) return;
 
   setTimeout(async () => {
     try {
-      const channel = await client.channels.fetch(ANIME_CHANNEL_ID);
+      const channel = await getChannel(client);
       if (!channel) return;
 
-      const score = Number(anime.score) || 0;
-
-      const color =
-        score >= 9 ? 0x1abc9c :
-        score >= 8 ? 0x2ecc71 :
-        score >= 7 ? 0xf1c40f :
-        score >= 6 ? 0xe67e22 :
-        score >= 5 ? 0xe74c3c :
-        0x2c3e50;
-
       const embed = new EmbedBuilder()
-        .setColor(color)
-
-        .setAuthor({
-          name: '🎉 Episode Released!',
-        })
-
-        .setTitle(anime.title)
+        .setColor(0x2ecc71)
+        .setTitle(`🎉 ${anime.title}`)
         .setURL(anime.url)
-
-        .setDescription(
-          `✨ Episode terbaru sudah tayang!\n\n` +
-          `🕒 **${fmtWIB(airingUTC)} WIB**`
-        )
-
-        // COVER IMAGE BESAR
+        .setDescription(`Episode terbaru sudah tayang!`)
         .setImage(anime.images?.jpg?.large_image_url)
-
-        .addFields(
-          {
-            name: '⭐ Rating',
-            value: anime.score ? `${anime.score}/10` : 'N/A',
-            inline: true,
-          },
-          {
-            name: '📚 Source',
-            value: formatSource(anime.source),
-            inline: true,
-          },
-          {
-            name: '🏢 Studio',
-            value: anime.studios?.[0] || 'Unknown',
-            inline: true,
-          },
-          {
-            name: '🎭 Genres',
-            value: anime.genres?.join(', ') || 'Unknown',
-          },
-          {
-            name: '📅 Aired',
-            value: anime.aired || 'Unknown',
-          }
-        )
-
-        .setFooter({
-          text: 'JLS Anime Reminder • Enjoy your watch 🍿',
-        })
-
         .setTimestamp();
 
       await channel.send({
@@ -257,56 +235,24 @@ function cleanupExpiredReminders() {
   }
 }
 
-// ================= TIME =================
+// ================= UTIL =================
 
-function buildAiringUTC(broadcast) {
-  const now = new Date();
+async function getChannel(client) {
+  if (cachedChannel) return cachedChannel;
 
-  const utcDay = now.getUTCDay();
-  const targetDay = DAY_INDEX[broadcast.day];
-  if (targetDay === undefined) return null;
-
-  let diff = targetDay - utcDay;
-  if (diff < 0) diff += 7;
-
-  const [hour, minute] = broadcast.time.split(':').map(Number);
-  const utcHour = hour - 9; // JST → UTC
-
-  return Date.UTC(
-    now.getUTCFullYear(),
-    now.getUTCMonth(),
-    now.getUTCDate() + diff,
-    utcHour,
-    minute,
-    0
-  );
+  cachedChannel = await client.channels.fetch(ANIME_CHANNEL_ID);
+  return cachedChannel;
 }
-
-function fmtWIB(ts) {
-  return new Date(ts).toLocaleTimeString('id-ID', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: WIB,
-  });
-}
-
-// ================= FORMAT =================
 
 function formatSource(source) {
-  if (!source || typeof source !== 'string') return 'Unknown';
+  if (!source) return 'Unknown';
 
   const map = {
-    original: 'Original',
     manga: 'Manga',
-    novel: 'Novel',
     light_novel: 'Light Novel',
-    web_manga: 'Web Manga',
-    web_novel: 'Web Novel',
-    visual_novel: 'Visual Novel',
-    game: 'Game',
-    other: 'Other',
+    novel: 'Novel',
+    original: 'Original',
   };
 
-  const key = source.toLowerCase().replace(/\s+/g, '_');
-  return map[key] || source;
+  return map[source?.toLowerCase()] || source;
 }
