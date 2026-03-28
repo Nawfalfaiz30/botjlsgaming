@@ -4,14 +4,11 @@ const { getAiringAnime } = require('../helpers/malService');
 
 // ================= CONFIG =================
 
-const ANIME_CHANNEL_ID =
-  process.env.ANIME_CHANNEL_ID || '1425803587526594621';
+const ANIME_CHANNEL_ID = process.env.ANIME_CHANNEL_ID || '1425803587526594621';
 const ROLE_ID = '1425791942003789928';
 
 const WIB = 'Asia/Jakarta';
-const JST_OFFSET = 9;
-
-// ================= STATE =================
+const JST_OFFSET = 9; // JST is UTC+9
 
 const scheduledReminders = new Set();
 let cachedChannel = null;
@@ -19,28 +16,21 @@ let cachedChannel = null;
 // ================= EXPORT =================
 
 module.exports = client => {
-
   setTimeout(() => {
-    runScan(client, { sendList: false, label: 'Startup' });
+    runScan(client, { sendList: true, label: 'Startup' });
   }, 5000);
 
-  cron.schedule(
-    '7 * * * *',
-    () => runScan(client, { sendList: false, label: 'Hourly' }),
-    { timezone: WIB }
-  );
+  // Hourly Scan: Menit ke-7 setiap jam (untuk jadwal reminder)
+  cron.schedule('7 * * * *', () => runScan(client, { sendList: false, label: 'Hourly' }), { timezone: WIB });
 
-  cron.schedule(
-    '0 8 * * *',
-    () => {
-      cleanupExpiredReminders();
-      runScan(client, { sendList: true, label: 'Daily 08:00' });
-    },
-    { timezone: WIB }
-  );
+  // Daily List: Jam 08:00 WIB
+  cron.schedule('0 6 * * *', () => {
+    cleanupExpiredReminders();
+    runScan(client, { sendList: true, label: 'Daily 06:00' });
+  }, { timezone: WIB });
 };
 
-// ================= CORE =================
+// ================= CORE LOGIC (REWRITTEN) =================
 
 async function runScan(client, { sendList = false, label = 'Scan' } = {}) {
   console.log(`[ANIME] ${label} scan started`);
@@ -48,135 +38,111 @@ async function runScan(client, { sendList = false, label = 'Scan' } = {}) {
   const channel = await getChannel(client);
   if (!channel) return;
 
-  let animeList = [];
-  try {
-    animeList = await getAiringAnime();
-  } catch (err) {
-    console.error('[ANIME] API error:', err);
-    return;
-  }
+  const animeList = await getAiringAnime();
+  if (!animeList?.length) return;
 
   const now = Date.now();
-  const next24h = now + 24 * 60 * 60 * 1000;
-
+  const next24h = now + (24 * 60 * 60 * 1000);
   const upcoming = [];
 
   for (const anime of animeList) {
-    if (!isStillAiring(anime)) continue;
     if (!anime.broadcast?.day || !anime.broadcast?.time) continue;
 
-    const airingUTC = getNextAiringUTC(anime.broadcast);
-    if (!airingUTC) continue;
+    const airingTimestamp = calculateNextAiring(anime.broadcast);
+    if (!airingTimestamp) continue;
 
-    if (airingUTC < now || airingUTC > next24h) continue;
-
-    const key = `${anime.mal_id}-${airingUTC}`;
-
-    if (!scheduledReminders.has(key)) {
-      scheduledReminders.add(key);
-      scheduleReminder(client, anime, airingUTC);
+    if (anime.aired_to) {
+      const endTimestamp = new Date(anime.aired_to).setHours(23, 59, 59, 999);
+      if (airingTimestamp > endTimestamp) continue;
     }
 
-    upcoming.push({ anime, airingUTC });
+    if (airingTimestamp >= now && airingTimestamp <= next24h) {
+      const key = `${anime.mal_id}-${airingTimestamp}`;
+
+      if (!scheduledReminders.has(key)) {
+        scheduledReminders.add(key);
+        scheduleReminder(client, anime, airingTimestamp);
+      }
+
+      upcoming.push({ anime, airingTimestamp });
+    }
   }
 
-  if (sendList && upcoming.length) {
+  console.log(`[ANIME] Found ${upcoming.length} upcoming anime.`);
+
+  if (sendList && upcoming.length > 0) {
     await sendScheduleEmbed(channel, upcoming);
   }
 }
 
-// ================= TIME =================
+// ================= THE MAGIC: TIME CALCULATION =================
 
-function getNextAiringUTC(broadcast) {
-  const now = new Date();
-
+function calculateNextAiring(broadcast) {
   const days = {
-    Sundays: 0,
-    Mondays: 1,
-    Tuesdays: 2,
-    Wednesdays: 3,
-    Thursdays: 4,
-    Fridays: 5,
-    Saturdays: 6,
+    Sundays: 0, Sunday: 0, Mondays: 1, Monday: 1, Tuesdays: 2, Tuesday: 2,
+    Wednesdays: 3, Wednesday: 3, Thursdays: 4, Thursday: 4, Fridays: 5, Friday: 5,
+    Saturdays: 6, Saturday: 6
   };
 
   const targetDay = days[broadcast.day];
   if (targetDay === undefined) return null;
 
-  const result = new Date(now);
-
-  while (result.getUTCDay() !== targetDay) {
-    result.setUTCDate(result.getUTCDate() + 1);
-  }
-
   const [hour, minute] = broadcast.time.split(':').map(Number);
+  
+  const now = new Date();
+  const nowJST = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + (JST_OFFSET * 3600000));
 
-  result.setUTCHours(hour - JST_OFFSET, minute, 0, 0);
+  let airingDateJST = new Date(nowJST);
+  let diff = targetDay - nowJST.getUTCDay();
+  
+  airingDateJST.setUTCDate(nowJST.getUTCDate() + diff);
+  airingDateJST.setUTCHours(hour, minute, 0, 0);
 
-  if (result.getTime() < now.getTime()) {
-    result.setUTCDate(result.getUTCDate() + 7);
+  let airingUnix = airingDateJST.getTime() - (JST_OFFSET * 3600000);
+
+  if (airingUnix < Date.now()) {
+    airingUnix += 7 * 24 * 60 * 60 * 1000;
   }
 
-  return result.getTime();
+  return airingUnix;
 }
 
-// ================= FILTER =================
-
-function isStillAiring(anime) {
-  const end = anime.aired?.to
-    ? new Date(anime.aired.to).getTime()
-    : null;
-
-  return !end || end > Date.now();
-}
-
-// ================= LIST EMBED =================
+// ================= EMBED LIST (UI TETAP SAMA) =================
 
 async function sendScheduleEmbed(channel, upcoming) {
   const client = channel.client;
-  if (!client?.user) return;
-
-  upcoming.sort((a, b) => a.airingUTC - b.airingUTC);
+  upcoming.sort((a, b) => a.airingTimestamp - b.airingTimestamp);
 
   const embed = new EmbedBuilder()
     .setColor(0x5865F2)
-    .setAuthor({
-      name: '✨ JLS Anime Scheduler',
-      iconURL: client.user.displayAvatarURL(),
-    })
+    .setAuthor({ name: '✨ JLS Anime Scheduler', iconURL: client.user.displayAvatarURL() })
     .setTitle('📺 Airing Anime — Next 24 Hours')
-    .setDescription(
-      '```fix\nStay updated with the latest anime episodes airing soon!\n```'
-    )
+    .setDescription('```fix\nStay updated with the latest anime episodes airing soon!\n```')
     .setThumbnail(client.user.displayAvatarURL({ size: 256 }))
     .setFooter({ text: 'JLS Gaming Anime Schedule' })
     .setTimestamp();
 
-  for (const { anime, airingUTC } of upcoming) {
-    const unix = Math.floor(airingUTC / 1000);
-
+  for (const { anime, airingTimestamp } of upcoming) {
+    const unix = Math.floor(airingTimestamp / 1000);
     embed.addFields({
-      name: `\n🎬 ${anime.title}`,
-      value:
-        `🕒 **${fmtWIB(airingUTC)} WIB** ⏳ <t:${unix}:R>\n` +
-        `⭐ **${anime.score ?? 'N/A'}** | 📚 ${formatSource(anime.source)}\n` +
-        `🏢 ${anime.studios?.[0]?.name || 'Unknown'}\n` +
-        `🎭 ${formatGenres(anime.genres)}\n` +
-        `📅 ${formatAired(anime.aired)}\n`,
+      name: `🎬 ${anime.title}`,
+      value: 
+        `🕒 **${fmtWIB(airingTimestamp)} WIB** ⏳ <t:${unix}:R>\n` +
+        `⭐ **${anime.score}** | 📚 ${formatSource(anime.source)}\n` +
+        `🏢 ${anime.studios?.[0] || 'Unknown'}\n` +
+        `🎭 ${anime.genres?.slice(0, 3).join(', ') || '—'}\n` +
+        `📅 ${anime.aired}`,
       inline: false,
     });
   }
 
-  await channel.send({
-    content: `<@&${ROLE_ID}>`,
-    embeds: [embed],
-  });
+  await channel.send({ content: `<@&${ROLE_ID}>`, embeds: [embed] });
 }
 
-// ================= REMINDER (UPDATED UI) =================
+// ================= REMINDER EMBED (UI TETAP SAMA) =================
 
-function scheduleReminder(client, anime, airingUTC) {
-  const delay = airingUTC - Date.now();
+function scheduleReminder(client, anime, airingTimestamp) {
+  const delay = airingTimestamp - Date.now();
   if (delay <= 0) return;
 
   setTimeout(async () => {
@@ -184,135 +150,57 @@ function scheduleReminder(client, anime, airingUTC) {
       const channel = await getChannel(client);
       if (!channel) return;
 
-      const now = Date.now();
-
       const embed = new EmbedBuilder()
         .setColor(0x2ecc71)
-
-        .setAuthor({
-          name: '🎉 Episode Released!',
-        })
-
+        .setAuthor({ name: '🎉 Episode Released!' })
         .setTitle(anime.title)
         .setURL(anime.url)
-
-        .setDescription(`✨ Episode terbaru sudah tayang!\n\n🕒 ${fmtWIB(airingUTC)} WIB`)
-
-        // INFO UTAMA (3 kolom)
+        .setDescription(`✨ Episode terbaru sudah tayang!\n\n🕒 **${fmtWIB(airingTimestamp)} WIB**`)
+        .setImage(anime.image)
         .addFields(
-          {
-            name: '⭐ Rating',
-            value: anime.score ? `${anime.score}/10` : 'N/A',
-            inline: true,
-          },
-          {
-            name: '📚 Source',
-            value: formatSource(anime.source),
-            inline: true,
-          },
-          {
-            name: '🏢 Studio',
-            value: anime.studios?.[0]?.name || 'Unknown',
-            inline: true,
-          },
-
-          {
-            name: '🎭 Genres',
-            value: formatGenres(anime.genres),
-          },
-          {
-            name: '📅 Aired',
-            value: formatAired(anime.aired),
-          }
+          { name: '⭐ Rating', value: anime.score ? `${anime.score}/10` : 'N/A', inline: true },
+          { name: '📚 Source', value: formatSource(anime.source), inline: true },
+          { name: '🏢 Studio', value: anime.studios?.[0] || 'Unknown', inline: true },
+          { name: '🎭 Genres', value: anime.genres?.join(', ') || '—', inline: false },
+          { name: '📅 Aired', value: anime.aired, inline: false }
         )
-
-        .setFooter({
-          text: `JLS Anime Reminder • Enjoy your watch 🍿 • ${formatNowWIB(now)}`,
-        })
-
+        .setFooter({ text: `JLS Anime Reminder • Enjoy your watch 🍿 • Today at ${fmtWIB(Date.now())}` })
         .setTimestamp();
 
-      await channel.send({
-        content: `<@&${ROLE_ID}>`,
-        embeds: [embed],
-      });
-
+      await channel.send({ content: `<@&${ROLE_ID}>`, embeds: [embed] });
     } catch (err) {
       console.error('[ANIME] Reminder error:', err);
     }
   }, delay);
 }
 
-// ================= CLEANUP =================
-
-function cleanupExpiredReminders() {
-  const now = Date.now();
-
-  for (const key of scheduledReminders) {
-    const airingUTC = Number(key.split('-')[1]);
-    if (airingUTC < now) {
-      scheduledReminders.delete(key);
-    }
-  }
-}
-
-// ================= UTIL =================
+// ================= UTILS =================
 
 async function getChannel(client) {
   if (cachedChannel) return cachedChannel;
-  cachedChannel = await client.channels.fetch(ANIME_CHANNEL_ID);
-  return cachedChannel;
+  try {
+    cachedChannel = await client.channels.fetch(ANIME_CHANNEL_ID);
+    return cachedChannel;
+  } catch { return null; }
 }
 
 function fmtWIB(ts) {
   return new Date(ts).toLocaleTimeString('id-ID', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: WIB,
-  });
-}
-
-function formatNowWIB(ts) {
-  return new Date(ts).toLocaleString('en-GB', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: WIB,
-  });
-}
-
-function formatGenres(genres) {
-  if (!genres || !genres.length) return '—';
-  return genres.slice(0, 3).map(g => g.name || g).join(', ');
-}
-
-function formatAired(aired) {
-  if (!aired) return 'Unknown';
-
-  if (typeof aired === 'string') return aired;
-
-  const from = aired.from ? aired.from.split('T')[0] : null;
-  const to = aired.to ? aired.to.split('T')[0] : null;
-
-  if (from && to) return `${from} to ${to}`;
-  if (from) return from;
-
-  return 'Unknown';
+    hour: '2-digit', minute: '2-digit', hour12: false, timeZone: WIB
+  }).replace('.', ':');
 }
 
 function formatSource(source) {
   if (!source) return 'Unknown';
+  const map = { light_novel: 'Light Novel', web_manga: 'Web Manga', web_novel: 'Web Novel' };
+  const key = source.toLowerCase().replace(/\s+/g, '_');
+  return map[key] || source.charAt(0).toUpperCase() + source.slice(1);
+}
 
-  const map = {
-    original: 'Original',
-    manga: 'Manga',
-    novel: 'Novel',
-    light_novel: 'Light Novel',
-    web_manga: 'Web Manga',
-    web_novel: 'Web Novel',
-    visual_novel: 'Visual Novel',
-    game: 'Game',
-    other: 'Other',
-  };
-
-  return map[source.toLowerCase().replace(/\s+/g, '_')] || source;
+function cleanupExpiredReminders() {
+  const now = Date.now();
+  for (const key of scheduledReminders) {
+    const airingTS = Number(key.split('-')[1]);
+    if (airingTS < now) scheduledReminders.delete(key);
+  }
 }
