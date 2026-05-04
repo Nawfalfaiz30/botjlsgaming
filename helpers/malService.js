@@ -1,5 +1,52 @@
 const MAL_API = 'https://api.jikan.moe/v4';
 
+async function fetchWithRetry(url, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+          'Accept': 'application/json'
+        }
+      });
+
+      clearTimeout(timeout);
+
+      if (res.status === 429) {
+        console.warn(`[MAL] 429 Rate Limit → retry in 2s`);
+        await delay(2000);
+        continue;
+      }
+
+      if (res.status === 403) {
+        console.warn(`[MAL] 403 Blocked → retry in 5s`);
+        await delay(5000);
+        continue;
+      }
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      return await res.json();
+
+    } catch (err) {
+      console.warn(`[MAL] Fetch error: ${err.message}`);
+      await delay(2000);
+    }
+  }
+
+  throw new Error('Max retries reached');
+}
+
+function delay(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
 async function getAiringAnime() {
   let allAnime = [];
   let currentPage = 1;
@@ -9,27 +56,12 @@ async function getAiringAnime() {
     console.log("[MAL] Fetching all airing anime pages...");
 
     while (hasNextPage) {
-      if (currentPage > 1) await new Promise(r => setTimeout(r, 500)); 
-
-      const res = await fetch(
+      const json = await fetchWithRetry(
         `${MAL_API}/seasons/now?filter=tv&page=${currentPage}`
       );
 
-      // Handle Rate Limit (429)
-      if (res.status === 429) {
-        console.warn(`[MAL] Rate limited on page ${currentPage}, retrying in 2 seconds...`);
-        await new Promise(r => setTimeout(r, 2000));
-        continue;
-      }
-
-      if (!res.ok) {
-        throw new Error(`HTTP Error: ${res.status} on page ${currentPage}`);
-      }
-
-      const json = await res.json();
       const data = json.data || [];
 
-      // Map data sesuai format yang diinginkan
       const mappedData = data.map(anime => ({
         mal_id: anime.mal_id,
         title: anime.title,
@@ -48,28 +80,30 @@ async function getAiringAnime() {
         studios: anime.studios?.map(s => s.name) || [],
         score: anime.score ?? "N/A",
         source: anime.source || "Unknown",
-        status: anime.status || "Unknown", 
+        status: anime.status || "Unknown",
       }));
 
       allAnime = allAnime.concat(mappedData);
-      
+
       hasNextPage = json.pagination?.has_next_page || false;
-      
-      console.log(`[MAL] Page ${currentPage} fetched. Total: ${allAnime.length} anime.`);
-      
+
+      console.log(`[MAL] Page ${currentPage} fetched. Total: ${allAnime.length}`);
+
       currentPage++;
 
-      if (currentPage > 15) break; 
+      // 🔥 Delay lebih aman
+      await delay(1000);
+
+      // Safety limit
+      if (currentPage > 10) break;
     }
 
     return allAnime;
 
   } catch (err) {
     console.error("Error getAiringAnime:", err.message);
-    return allAnime; 
+    return allAnime;
   }
 }
 
-module.exports = {
-  getAiringAnime,
-};
+module.exports = { getAiringAnime };
